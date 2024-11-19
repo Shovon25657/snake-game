@@ -16,6 +16,11 @@ let players = {}; // Keeps track of all players
 
 app.use(express.static('public')); // Serve the game static files from the 'public' folder
 
+// Heartbeat endpoint to prevent Render free-tier timeout
+app.get('/heartbeat', (req, res) => {
+  res.status(200).send('Server is alive!');
+});
+
 // Serve the game on the root URL
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/snake.html');
@@ -27,6 +32,7 @@ io.on('connection', (socket) => {
 
   // Initialize the player's snake and properties
   players[socket.id] = {
+    name: `Player_${socket.id.slice(0, 5)}`, // Generate a unique player name
     snake: [{ x: 200, y: 200 }],
     direction: 'RIGHT',
     score: 0,
@@ -34,7 +40,7 @@ io.on('connection', (socket) => {
   };
 
   // Notify other players of the new player joining
-  socket.broadcast.emit('playerJoined', socket.id);
+  socket.broadcast.emit('playerJoined', players[socket.id].name);
 
   // Send the current game state to the new player
   socket.emit('gameState', { players, food, obstacles });
@@ -47,9 +53,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Start the game when both players are ready
+  // Start the game when at least two players are ready
   socket.on('startGame', () => {
-    if (Object.keys(players).length === 2) {
+    if (Object.keys(players).length >= 2) {
       // Game loop to update the game state at regular intervals
       const gameInterval = setInterval(() => {
         for (const playerId in players) {
@@ -69,7 +75,10 @@ io.on('connection', (socket) => {
             if (head.x === food.x && head.y === food.y) {
               player.score += 1;
               // Create new food at a random position
-              food = { x: Math.floor(Math.random() * (canvasWidth / gridSize)) * gridSize, y: Math.floor(Math.random() * (canvasHeight / gridSize)) * gridSize };
+              food = {
+                x: Math.floor(Math.random() * (canvasWidth / gridSize)) * gridSize,
+                y: Math.floor(Math.random() * (canvasHeight / gridSize)) * gridSize,
+              };
             } else {
               // Remove the last part of the snake (tail)
               player.snake.pop();
@@ -89,7 +98,25 @@ io.on('connection', (socket) => {
                 }
               }
             }
+
+            // Check for collisions with obstacles
+            if (obstacles.some(obstacle => obstacle.x === head.x && obstacle.y === head.y)) {
+              player.alive = false; // Player crashes into an obstacle
+            }
+
+            // Check for self-collision
+            if (player.snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y)) {
+              player.alive = false;
+            }
           }
+        }
+
+        // Dynamically add obstacles
+        if (Math.random() < 0.01) {
+          obstacles.push({
+            x: Math.floor(Math.random() * (canvasWidth / gridSize)) * gridSize,
+            y: Math.floor(Math.random() * (canvasHeight / gridSize)) * gridSize,
+          });
         }
 
         // Send the updated game state to all players
@@ -98,8 +125,9 @@ io.on('connection', (socket) => {
         // If no players are left alive, stop the game and declare a winner
         if (Object.values(players).every(player => !player.alive)) {
           clearInterval(gameInterval);
-          const winner = Object.values(players).find(player => player.alive);
-          io.emit('gameOver', winner ? winner.id : 'Draw');
+          const winner = Object.values(players).reduce((max, player) =>
+            player.score > max.score ? player : max, { score: 0 });
+          io.emit('gameOver', winner.name || 'No Winner');
         }
       }, gameSpeed); // Update the game every 150ms
     }
@@ -114,6 +142,7 @@ io.on('connection', (socket) => {
 });
 
 // Start the server
-server.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
