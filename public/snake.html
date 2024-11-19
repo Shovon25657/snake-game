@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multiplayer Snake Game</title>
+  <style>
+    body {
+      background-color: #2b2b2b;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      flex-direction: column;
+    }
+
+    canvas {
+      border: 2px solid white;
+      margin-top: 20px;
+    }
+
+    .score {
+      font-size: 24px;
+      margin: 10px;
+    }
+
+    .btn {
+      background-color: #28a745;
+      color: white;
+      padding: 10px 20px;
+      font-size: 18px;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      margin-top: 20px;
+    }
+
+    .btn:hover {
+      background-color: #218838;
+    }
+
+    .game-over {
+      display: none;
+      font-size: 36px;
+      color: red;
+      margin-top: 20px;
+    }
+
+    .restart {
+      display: none;
+      background-color: #dc3545;
+      padding: 10px 20px;
+      font-size: 18px;
+      border: none;
+      cursor: pointer;
+      border-radius: 5px;
+      margin-top: 20px;
+    }
+
+    .restart:hover {
+      background-color: #c82333;
+    }
+  </style>
+</head>
+<body>
+  <h1>Multiplayer Snake Game</h1>
+  <div class="score">Score: 0</div>
+  <canvas id="gameCanvas" width="600" height="400"></canvas>
+  <button id="startBtn" class="btn">Start Game</button>
+  <div id="gameOver" class="game-over">Game Over!</div>
+  <button id="restartBtn" class="restart">Restart Game</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gridSize = 20;
+    const socket = io(); // Establish socket connection
+    let gameState = { players: {}, food: {}, obstacles: [] };
+    let currentPlayerId = null;
+    let myScore = 0;
+
+    // Listen for game state updates from the server
+    socket.on('gameState', (state) => {
+      gameState = state;
+      drawGame();
+    });
+
+    // Listen for player joining
+    socket.on('playerJoined', (playerId) => {
+      currentPlayerId = playerId;
+    });
+
+    // Listen for game over event
+    socket.on('gameOver', (winnerId) => {
+      document.getElementById('gameOver').style.display = 'block';
+      document.getElementById('restartBtn').style.display = 'block';
+      const winner = winnerId === currentPlayerId ? 'You won!' : 'You lost!';
+      alert(winner);
+    });
+
+    // Listen for keyboard input to move the player
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp') socket.emit('move', 'UP');
+      if (e.key === 'ArrowDown') socket.emit('move', 'DOWN');
+      if (e.key === 'ArrowLeft') socket.emit('move', 'LEFT');
+      if (e.key === 'ArrowRight') socket.emit('move', 'RIGHT');
+    });
+
+    // Start the game
+    document.getElementById('startBtn').addEventListener('click', () => {
+      socket.emit('startGame');
+      document.getElementById('startBtn').disabled = true;
+    });
+
+    // Restart the game
+    document.getElementById('restartBtn').addEventListener('click', () => {
+      window.location.reload();
+    });
+
+    // Function to draw the game (players, food, obstacles)
+    function drawGame() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw players' snakes
+      for (const playerId in gameState.players) {
+        const player = gameState.players[playerId];
+
+        if (!player.alive) continue;
+
+        ctx.fillStyle = playerId === currentPlayerId ? 'lime' : 'cyan';
+        for (let i = 0; i < player.snake.length; i++) {
+          ctx.fillRect(player.snake[i].x, player.snake[i].y, gridSize, gridSize);
+        }
+
+        // Update the score for the current player
+        if (playerId === currentPlayerId) {
+          document.querySelector('.score').textContent = `Score: ${player.score}`;
+          myScore = player.score;
+        }
+      }
+
+      // Draw the food
+      ctx.fillStyle = 'red';
+      ctx.fillRect(gameState.food.x, gameState.food.y, gridSize, gridSize);
+
+      // Draw obstacles
+      ctx.fillStyle = 'gray';
+      gameState.obstacles.forEach(obstacle => {
+        ctx.fillRect(obstacle.x, obstacle.y, gridSize, gridSize);
+      });
+    }
+  </script>
+</body>
+</html>
